@@ -1,126 +1,118 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 
-// Khởi tạo PCA9685
+// ==========================================
+// 1. CẤU HÌNH MẠNG & CLOUD
+// ==========================================
+const char* ssid = "Duc Tai";
+const char* password = "T06032004";
+
+const char* mqtt_server = "broker.emqx.io";
+const int mqtt_port = 1883;
+const char* mqtt_topic = "vku/artemis/robot_arm/control";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// ==========================================
+// 2. CẤU HÌNH PHẦN CỨNG (PCA9685)
+// ==========================================
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-// Kênh cắm vật lý trên PCA9685 (Đế, Vai, Khuỷu, Cổ, Xoay, Kẹp)
+// Kênh vật lý tương ứng với mảng Home
 const int KENH_SERVO[6] = {0, 1, 2, 3, 8, 12};
+int goc_hien_tai[6] = {0, 100, 90, 0, 0, 170};
 
-// Vị trí Home (Nghỉ) ban đầu
-int goc_hien_tai[6] = {90, 100, 90, 90, 90, 170};
-
-// Bộ đệm đọc UART (chống tràn RAM)
-const byte MAX_BUFFER_SIZE = 64;
-char dataBuffer[MAX_BUFFER_SIZE];
-byte dataIndex = 0;
-bool newDataReady = false;
-
-// Hàm quy đổi góc 0-180 sang xung PWM cho PCA9685
+// Hàm quy đổi góc 0-180 sang xung PCA9685
 int angleToPulse(int ang) {
   ang = constrain(ang, 0, 180);
   return map(ang, 0, 180, 150, 600); 
 }
 
-void setup() {
-  // 1. Giao tiếp máy tính (để debug)
-  Serial.begin(115200);
-  
-  // 2. Giao tiếp Raspberry Pi (UART2: RX=16, TX=17)
-  Serial2.begin(115200, SERIAL_8N1, 16, 17);
-  
-  // 3. Khởi tạo PWM
-  pwm.begin();
-  pwm.setPWMFreq(50); // Servo tương tự chạy ở tần số 50Hz
-  
-  Serial.println("=============================================");
-  Serial.println("🚀 ARTEMIS - REAL-TIME KINEMATIC SLAVE 🚀");
-  Serial.println("=============================================");
-  Serial.println("[HỆ THỐNG] Đang đưa robot về vị trí Home...");
-
-  // Ép góc Home
-  for(int i = 0; i < 6; i++) {
-    pwm.setPWM(KENH_SERVO[i], 0, angleToPulse(goc_hien_tai[i]));
+// ==========================================
+// 3. HÀM XỬ LÝ DỮ LIỆU TỪ CLOUD (CALLBACK)
+// ==========================================
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  char msg[length + 1];
+  for (int i = 0; i < length; i++) {
+    msg[i] = (char)payload[i];
   }
-  
-  Serial.println("[HỆ THỐNG] Đã sẵn sàng nhận luồng dữ liệu liên tục!");
-}
+  msg[length] = '\0'; 
 
-void loop() {
-  // Lắng nghe dữ liệu UART ở chế độ Non-blocking (Không làm khựng hệ thống)
-  nhanDuLieuUART();
-
-  // Khi nhận đủ 1 bản tin (kết thúc bằng \n), tiến hành xử lý ngay
-  if (newDataReady) {
-    xuLyBanTin(dataBuffer);
-    
-    // Reset buffer để đón bản tin tiếp theo
-    dataIndex = 0;
-    newDataReady = false;
-  }
-}
-
-// ==========================================
-// HÀM NHẬN DỮ LIỆU TỐC ĐỘ CAO
-// ==========================================
-void nhanDuLieuUART() {
-  while (Serial2.available() > 0 && !newDataReady) {
-    char rc = Serial2.read();
-    
-    // Ký tự ngắt dòng báo hiệu hết 1 chuỗi lệnh
-    if (rc == '\n') {
-      dataBuffer[dataIndex] = '\0'; // Chốt chuỗi
-      newDataReady = true;
-    } 
-    else {
-      dataBuffer[dataIndex] = rc;
-      dataIndex++;
-      if (dataIndex >= MAX_BUFFER_SIZE) {
-        dataIndex = MAX_BUFFER_SIZE - 1; // Chống tràn bộ đệm
-      }
-    }
-  }
-}
-
-// ==========================================
-// HÀM BÓC TÁCH & ĐIỀU KHIỂN
-// ==========================================
-void xuLyBanTin(char* banTin) {
-  // Kiểm tra tính toàn vẹn của gói tin: phải bắt đầu bằng '<' và kết thúc bằng '>'
-  if (banTin[0] == '<' && banTin[strlen(banTin)-1] == '>') {
-    
-    // Tạo các biến tạm để chứa 6 góc
+  // Kiểm tra gói tin nguyên vẹn
+  if (msg[0] == '<' && msg[length - 1] == '>') {
     int de, vai, khuyu, co, xoay, kep;
+    int parsed = sscanf(msg, "<%d,%d,%d,%d,%d,%d>", &de, &vai, &khuyu, &co, &xoay, &kep);
     
-    // Dùng sscanf để quét nhanh 6 con số phân cách bằng dấu phẩy
-    // Định dạng mong đợi: <De,Vai,Khuyu,Co,Xoay,Kep>
-    int soLuongThamSo = sscanf(banTin, "<%d,%d,%d,%d,%d,%d>", &de, &vai, &khuyu, &co, &xoay, &kep);
-    
-    // Nếu Pi chỉ gửi 2 thông số (Cổ và Kẹp) ở giai đoạn bạn đang test
-    if (soLuongThamSo == 2) {
-      // Đọc lại vào đúng biến (ở đây mượn tạm biến de và vai làm co và kep để test 2 trục)
-      sscanf(banTin, "<%d,%d>", &co, &kep);
-      
-      // Cập nhật mảng và ra lệnh
-      pwm.setPWM(KENH_SERVO[3], 0, angleToPulse(co));
-      pwm.setPWM(KENH_SERVO[5], 0, angleToPulse(kep));
-      
-      // In ra Serial máy tính để bạn theo dõi
-      Serial.printf(">> [VR] Cập nhật: Cổ = %d | Kẹp = %d\n", co, kep);
-    }
-    // Nếu Pi gửi full 6 thông số
-    else if (soLuongThamSo == 6) {
+    if (parsed == 6) {
       pwm.setPWM(KENH_SERVO[0], 0, angleToPulse(de));
       pwm.setPWM(KENH_SERVO[1], 0, angleToPulse(vai));
       pwm.setPWM(KENH_SERVO[2], 0, angleToPulse(khuyu));
       pwm.setPWM(KENH_SERVO[3], 0, angleToPulse(co));
       pwm.setPWM(KENH_SERVO[4], 0, angleToPulse(xoay));
       pwm.setPWM(KENH_SERVO[5], 0, angleToPulse(kep));
-      
-      Serial.printf(">> [VR] Full 6 trục: %d, %d, %d, %d, %d, %d\n", de, vai, khuyu, co, xoay, kep);
-    }
-    else {
-      Serial.println("[CẢNH BÁO] Gói tin không đủ thông số hoặc bị nhiễu.");
+
+      Serial.printf("[KINEMATICS] Trục chạy an toàn -> Đế:%d Vai:%d Khuỷu:%d Cổ:%d Xoay:%d Kẹp:%d\n", de, vai, khuyu, co, xoay, kep);
+    } else {
+      Serial.println("[LỖI DATA] Gói tin không đủ 6 thông số.");
     }
   }
+}
+
+// ==========================================
+// 4. HÀM DUY TRÌ KẾT NỐI (AUTO RECONNECT)
+// ==========================================
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("[MQTT] Đang kết nối tới Broker... ");
+    String clientId = "Artemis-ESP32-" + String(random(0xffff), HEX);
+    
+    if (client.connect(clientId.c_str())) {
+      Serial.println("KẾT NỐI THÀNH CÔNG!");
+      client.subscribe(mqtt_topic);
+      Serial.printf("[MQTT] Đã đăng ký lắng nghe kênh: %s\n", mqtt_topic);
+    } else {
+      Serial.print("THẤT BẠI. Mã lỗi rc=");
+      Serial.print(client.state());
+      Serial.println(" -> Thử lại sau 5 giây.");
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\n=============================================");
+  Serial.println("🚀 ARTEMIS - CLOUD KINEMATIC SLAVE 🚀");
+  Serial.println("=============================================");
+
+  // Khởi động Servo và ép vào vị trí Home ngay khi bật nguồn
+  pwm.begin();
+  pwm.setPWMFreq(50);
+  for(int i = 0; i < 6; i++) {
+    pwm.setPWM(KENH_SERVO[i], 0, angleToPulse(goc_hien_tai[i]));
+  }
+  Serial.println("[HỆ THỐNG] Servo đã vào vị trí Home.");
+
+  // Kết nối WiFi
+  Serial.printf("[WIFI] Đang kết nối tới %s ", ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n[WIFI] Đã cấp IP: " + WiFi.localIP().toString());
+
+  // Cấu hình MQTT
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(mqttCallback);
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop(); 
 }
