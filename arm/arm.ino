@@ -6,10 +6,10 @@
 // ==========================================
 // 1. CẤU HÌNH MẠNG & CLOUD
 // ==========================================
-const char* ssid = "Duc Tai";
-const char* password = "T06032004";
+const char* ssid = "VKU_Student";
+const char* password = "Vku@2025";
 
-const char* mqtt_server = "broker.emqx.io";
+const char* mqtt_server = "10.149.116.175";
 const int mqtt_port = 1883;
 const char* mqtt_topic = "vku/artemis/robot_arm/control";
 
@@ -22,13 +22,13 @@ PubSubClient client(espClient);
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 // Kênh vật lý tương ứng với mảng Home
-const int KENH_SERVO[6] = {0, 1, 2, 3, 8, 12};
-int goc_hien_tai[6] = {0, 100, 90, 0, 0, 170};
+const int KENH_SERVO[6] = { 0, 1, 2, 3, 8, 12 };
+int goc_hien_tai[6] = { 0, 100, 90, 0, 0, 170 };
 
 // Hàm quy đổi góc 0-180 sang xung PCA9685
 int angleToPulse(int ang) {
   ang = constrain(ang, 0, 180);
-  return map(ang, 0, 180, 150, 600); 
+  return map(ang, 0, 180, 150, 600);
 }
 
 // ==========================================
@@ -39,13 +39,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   for (int i = 0; i < length; i++) {
     msg[i] = (char)payload[i];
   }
-  msg[length] = '\0'; 
+  msg[length] = '\0';
 
   // Kiểm tra gói tin nguyên vẹn
   if (msg[0] == '<' && msg[length - 1] == '>') {
     int de, vai, khuyu, co, xoay, kep;
     int parsed = sscanf(msg, "<%d,%d,%d,%d,%d,%d>", &de, &vai, &khuyu, &co, &xoay, &kep);
-    
+
     if (parsed == 6) {
       pwm.setPWM(KENH_SERVO[0], 0, angleToPulse(de));
       pwm.setPWM(KENH_SERVO[1], 0, angleToPulse(vai));
@@ -68,7 +68,7 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("[MQTT] Đang kết nối tới Broker... ");
     String clientId = "Artemis-ESP32-" + String(random(0xffff), HEX);
-    
+
     if (client.connect(clientId.c_str())) {
       Serial.println("KẾT NỐI THÀNH CÔNG!");
       client.subscribe(mqtt_topic);
@@ -91,7 +91,7 @@ void setup() {
   // Khởi động Servo và ép vào vị trí Home ngay khi bật nguồn
   pwm.begin();
   pwm.setPWMFreq(50);
-  for(int i = 0; i < 6; i++) {
+  for (int i = 0; i < 6; i++) {
     pwm.setPWM(KENH_SERVO[i], 0, angleToPulse(goc_hien_tai[i]));
   }
   Serial.println("[HỆ THỐNG] Servo đã vào vị trí Home.");
@@ -114,5 +114,5 @@ void loop() {
   if (!client.connected()) {
     reconnect();
   }
-  client.loop(); 
+  client.loop();
 }
