@@ -3,11 +3,9 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-// ==========================================
 // 1. CẤU HÌNH MẠNG & CLOUD
-// ==========================================
-const char* ssid = "VKU_Student";
-const char* password = "Vku@2025";
+const char* ssid = "iQOO Z9 Turbo";
+const char* password = "12121212";
 
 const char* mqtt_server = "10.149.116.175";
 const int mqtt_port = 1883;
@@ -16,9 +14,7 @@ const char* mqtt_topic = "vku/artemis/robot_arm/control";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// ==========================================
 // 2. CẤU HÌNH PHẦN CỨNG (PCA9685)
-// ==========================================
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 // Kênh vật lý tương ứng với mảng Home
@@ -31,9 +27,7 @@ int angleToPulse(int ang) {
   return map(ang, 0, 180, 150, 600);
 }
 
-// ==========================================
 // 3. HÀM XỬ LÝ DỮ LIỆU TỪ CLOUD (CALLBACK)
-// ==========================================
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   char msg[length + 1];
   for (int i = 0; i < length; i++) {
@@ -61,9 +55,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-// ==========================================
 // 4. HÀM DUY TRÌ KẾT NỐI (AUTO RECONNECT)
-// ==========================================
 void reconnect() {
   while (!client.connected()) {
     Serial.print("[MQTT] Đang kết nối tới Broker... ");

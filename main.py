@@ -8,29 +8,30 @@ from flask import Flask, Response
 # KHỞI TẠO WEB SERVER
 app = Flask(__name__)
 
+# MQTT CONFIG
 MQTT_BROKER = "10.149.116.175"
 MQTT_PORT = 1883
 MQTT_TOPIC = "vku/artemis/robot_arm/control"
 
 print(f"[MQTT] Đang kết nối tới {MQTT_BROKER}...")
+
 mqtt_client = mqtt.Client()
 
 try:
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_start()
     mqtt_connected = True
-    print("[MQTT] KẾT NỐI THÀNH CÔNG")
+    print("[MQTT] KẾT NỐI THÀNH CÔNG ✅")
+
 except Exception as e:
     mqtt_connected = False
     print(f"[MQTT ERROR] {e}")
-
 # MEDIAPIPE CONFIG
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     max_num_hands=1, min_detection_confidence=0.7, model_complexity=0
 )
-
 # CAMERA CONFIG
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -175,7 +176,7 @@ def index():
             </style>
         </head>
         <body>
-            <h1>DASHBOARD</h1>
+            <h1>🤖 ARTEMIS VR CLOUD DASHBOARD</h1>
             <img src="/video_feed">
         </body>
     </html>
